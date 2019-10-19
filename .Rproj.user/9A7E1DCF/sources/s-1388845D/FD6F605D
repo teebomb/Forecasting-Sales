@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1569972205689.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1103623050",
+    "id" : "FD6F605D",
+    "lastKnownWriteTime" : 1569972774,
+    "last_content_update" : 1569972774688,
+    "path" : "D:/Analyst/PORTFOLIO/SALES DATASET FOR FORECASTING/Forecasting-Sales/Data Analysis.Rmd",
+    "project_path" : "Data Analysis.Rmd",
+    "properties" : {
+        "cursorPosition" : "20,95",
+        "scrollLine" : "0",
+        "tempName" : "Untitled2"
+    },
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

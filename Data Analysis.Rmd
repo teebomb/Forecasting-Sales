@@ -1,0 +1,21 @@
+---
+title: "Sales Forecasting"
+author: "Tommy Brant"
+date: "October 1, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+DATASET: RUSSIAN SOFTWARE
+LOCATION: https://www.kaggle.com/c/competitive-data-science-predict-future-sales/data
+SAMPLE DATA: D:\Analyst\PORTFOLIO\SALES DATASET FOR FORECASTING\Data\sales_train_v2.csv
+TEST DATA: D:\Analyst\PORTFOLIO\SALES DATASET FOR FORECASTING\Data\test.csv
+
+EXAMPLE SUBMISSION: D:\Analyst\PORTFOLIO\SALES DATASET FOR FORECASTING\Data\sample_submission.csv
+
+DATASET IS NOT AS 'REAL-WORLD' DATASET WOULD BE
+
+REF NOTEBOOKS: https://www.kaggle.com/c/competitive-data-science-predict-future-sales/notebooks
