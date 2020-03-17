@@ -1,21 +1,455 @@
 ---
 title: "Sales Forecasting"
 author: "Tommy Brant"
-date: "October 1, 2019"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+##Executive Summary
+We will use a dataset of software sales to forecast montly and annual sales.
+.
+.
+
+
+
+Libraries
+```{r message=FALSE, warning=FALSE}
+#load libraries
+library(stringr)
+library(plyr)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(zoo)
+library(tseries)
+library(forecast)
+library(base)
+
+
 ```
 
-DATASET: RUSSIAN SOFTWARE
-LOCATION: https://www.kaggle.com/c/competitive-data-science-predict-future-sales/data
-SAMPLE DATA: D:\Analyst\PORTFOLIO\SALES DATASET FOR FORECASTING\Data\sales_train_v2.csv
-TEST DATA: D:\Analyst\PORTFOLIO\SALES DATASET FOR FORECASTING\Data\test.csv
+See appendix for description of sales data
 
-EXAMPLE SUBMISSION: D:\Analyst\PORTFOLIO\SALES DATASET FOR FORECASTING\Data\sample_submission.csv
+Reading the Data
+```{r}
 
-DATASET IS NOT AS 'REAL-WORLD' DATASET WOULD BE
+#-----file of cat's of item_id's
+item_cats_file<-'../Data/item_categories.csv'
 
-REF NOTEBOOKS: https://www.kaggle.com/c/competitive-data-science-predict-future-sales/notebooks
+#----file relating items
+items_file<-'../Data/items.csv'
+
+
+train_file<-'../Data/sales_train_v2.csv'
+test_file<-'../Data/test.csv'
+
+#----don't read stringasfactors bc only string is date. cant always do this bc of high feature possibility
+#if (!exists('sales_raw_df')) sales_raw_df<-read.csv(train_file, header=T, stringsAsFactors=FALSE)
+
+#---doin lazy-like
+if (!exists('sales_raw_df')) sales_raw_df<-read.csv(train_file, header=T)
+if (!exists('item_cats_df')) item_cats_df<-read.csv(item_cats_file, header=T, encoding="UTF-8") #not going to use this often
+if (!exists('items_df')) items_df<-read.csv(items_file, header=T, encoding="UTF-8")
+
+#---add item_cat_id to base data
+if (!exists('sales_df')) sales_df<-merge(sales_raw_df,items_df[,-1], by="item_id")
+
+#---tester df (expendable)
+#if (!exists('sales_df1')) sales_df1<-read.csv(train_file, header=T)
+
+
+# --- clear memory
+#rm(list = c('test', 'sales_raw_df', 'sales_raw_df1', 'sales_df', 'sales_by_item_id', 'max_index', 'item_cats_df', 'items_df', 'future', 'future1'))
+
+```
+
+
+Scan the Data
+```{r}
+str(sales_df)
+```
+
+Sampling the sample
+```{r}
+head(sales_df)
+tail(sales_df)
+
+
+names(sales_df) #appears to be daily sales/transactions per location per item sold
+
+nrow(sales_df) #2,935,849 sales over x years
+
+length(unique(sales_df$item_id)) #21807 unique items to sell
+
+
+```
+
+
+This is not a real data set b/c there are no NA's or invalid entries.
+```{r}
+
+#-----lazy inefficient way to scan for NAs but great for 'small' data sets
+table(is.na(sales_df)) #no NA's
+
+
+
+```
+
+
+Preprocesssing 
+```{r}
+
+#---Date/Time 
+#---Big thanks to lubridate for making this ez
+
+if (class(sales_df$date)!='Date') sales_df$date<-dmy(sales_df$date) #DON'T RUN THIS A SECOND TIME
+
+#-----create years for annual analysis
+sales_df<-sales_df %>%
+  mutate(year = year(sales_df$date)) %>%
+  mutate(month = month(sales_df$date))
+
+#---------SORTING BY DATE
+#sales_df %>%
+#  arrange(sales_df$date)
+  
+
+
+#----Item_id as factor
+sales_df$item_id<-as.factor(sales_df$item_id)
+
+
+#---Shop_id as factor
+sales_df$shop_id<-as.factor(sales_df$shop_id)
+
+
+```
+
+
+
+
+
+
+Exploratory Questions
+
+1. "What item has the most lifetime sales dollar"
+
+2. "What shop has the best sales in 2014"
+
+3. "what has the most consecutive sales?"
+
+4. "What seasonal patterns are noticeable?"
+
+5. 'what category of items sold the best?'
+
+6 ' What is daily sales activity?'
+
+7. 'Monthly sales activity?'
+
+
+Exploring
+
+1. Top Performing Lifetime sales by Item_id
+```{r}
+#----from definittions, date_block_num represents a consecutive month number, used for convenience. January 2013 is 0, February 2013 is 1,..., October 2015 is 33
+
+
+#-----show top performing lifetime sales by item_id 
+
+sales_by_item_id<-sales_df %>%
+  #select(date, date_block_num, shop_id, item_id, item_price, item_cnt_day) %>% #-----in a real world exapmle, we'd leverage this part
+  #na.omit() %>%  #---------would be used in real world data
+  group_by(item_id) %>%
+  summarise(
+    totals_sales = sum(item_price),
+    avg_sales = mean(item_price),
+    count = length(item_price)
+  ) %>%
+  arrange(desc(totals_sales)) #%>%
+  
+```
+
+2. Monthly performance
+```{r}
+#---total sales by volume monthly
+
+
+sales_df %>%
+group_by(date_block_num) %>%
+  summarise(
+    totals_sales = sum(item_cnt_day)
+    #, avg_sales = mean(item_cnt_day)
+    #, count = length(item_price)
+  ) %>%
+  #arrange(desc(totals_sales)) 
+  
+  ggplot(aes(x=date_block_num, y=totals_sales)) +
+    geom_line() +
+    geom_point() +
+    #geom_line(aes(y=avg_sales), color="red") + 
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(title="Monthly performance by volume") +
+    xlab("Month 1 thru 33") +
+    ylab("Sales Volume")
+
+
+```
+
+
+
+
+
+```{r}
+#max(sales_by_item_id$totals_sales) #113,264,259
+
+
+max_index<-sales_by_item_id %>%
+  filter(totals_sales == max(sales_by_item_id$totals_sales))
+ 
+
+#-----note there are some high dollars items, and even some low dollar high volume sales. good mix
+
+ggplot(sales_by_item_id, aes(x=item_id,y=totals_sales))+  
+    geom_bar(stat="identity", width=1, fill="gray72",color="black")+ # fill="steelblue2")+
+    ylab("Sales by Volume")+
+    xlab("Part Number")+
+    ggtitle("Highest Lifetime Sales by Volume") +
+    theme(axis.text.x=element_blank(),
+              axis.ticks.x=element_blank())
+
+
+```
+
+The most sales of any item in the portfolio was `r as.character(max(sales_by_item_id$totals_sales))` with item id `r max_index[[1]]`
+
+Better viewing of top performers
+```{r}
+#-----make sortable by category
+sales_by_item_id$item_id<-factor(sales_by_item_id$item_id, levels=sales_by_item_id$item_id[order(sales_by_item_id$totals_sales)])
+
+
+  ggplot(sales_by_item_id[1:5,], aes(x=item_id,y=totals_sales))+  #filter freq >1
+    geom_bar(stat="identity", width=1, fill="gray72",color="black")+ # fill="steelblue2")+
+    coord_flip()+
+    xlab("Sales by volume")+
+    ylab("Part Number")+
+    ggtitle("Highest Lifetime Sales by Volume") 
+    #theme(axis.text.x=element_blank(),
+    #          axis.ticks.x=element_blank())
+
+
+```
+
+
+
+
+```{r include=FALSE}
+#------CHUNK TO CREATE ROLLING TOTAL. CAN ENHANCE WITH ROLLING OTTALS PER YER, IF NECESS
+# ---------GET CUMULATIVE SUMS BASED ON DATE/TIME
+sales_lifetime<-sales_df %>%
+  arrange(sales_df$date) %>%
+  mutate(rolling_total=cumsum(item_price))
+
+```
+
+```{r include=FALSE} 
+# - -- -Cumulative Sales not meaningful here 
+
+#plotting 3M points takes ~45s
+
+#sales_lifetime %>%
+  #filter(y=2013)
+#ggplot(aes(x=date, y = rolling_total)) +
+#  geom_point() +
+#  facet_wrap(~year)
+#  labs(title = "Software Sales",
+#           y = "USD",
+#           x = "Date") + theme_bw(base_size = 15)
+
+```
+
+
+
+```{r}
+#---TIME SERIES VIEW OF DATA
+#---MONTHLY ITEMS SOLD PER MONTH FOR 33 MONTHS
+
+sales_df %>%
+group_by(date_block_num) %>%
+  summarise(
+    totals_sales = sum(item_cnt_day)
+    #, avg_sales = mean(item_cnt_day)
+    #, count = length(item_price)
+  ) %>%
+  #arrange(desc(totals_sales)) 
+  
+  ggplot(aes(x=date_block_num, y=totals_sales)) +
+    geom_line() +
+    geom_point() +
+    #geom_line(aes(y=avg_sales), color="red") + 
+    geom_smooth(method = "lm", se = FALSE) + 
+    labs(title = "Monthly perf by volume") +
+    ylab("Sales by volume")+
+    xlab("Month 1 thru 33")
+
+```
+
+
+Daily #'s
+
+```{r}
+sales_df %>%
+  group_by(date) %>%
+  summarise(
+    totals_sales = sum(item_cnt_day)
+    , total_dollars = sum(item_price)
+  ) %>%
+  
+  ggplot(aes(x=date, y=totals_sales)) +
+    geom_line() +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) + 
+    labs(title= "1000 days of performance by volume") +
+    ylab("Sales by volume")
+    
+
+```
+
+Year over Year views - $'s and volume
+```{r}
+
+sales_df %>%
+  group_by(year) %>%
+  summarise(
+    totals_sales = sum(item_cnt_day)
+    , total_dollars = sum(item_price)
+  ) %>%
+  
+  ggplot(aes(x=year, y=totals_sales)) +
+    geom_line() +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) + 
+    labs(title = "Annual Performance based on volume") +
+    ylab("Sales by volume")
+
+```
+
+Rolling Mean
+
+```{r warning=FALSE}
+
+#names(sales_df)
+sales_df %>%
+  group_by(date_block_num) %>%
+  summarise(
+    totals_sales = sum(item_cnt_day)
+    , total_dollars = sum(item_price)
+  ) %>%
+  mutate(roll_mean = rollmean(totals_sales, 12, fill=NA)) %>%
+  
+
+ggplot(aes(x=date_block_num, y=roll_mean)) +
+    geom_line() +
+    geom_point() +
+    scale_y_continuous(limits = c(0, NA)) +
+    labs(title = "Rolling Mean over Time") +
+    ylab("Sales by volume")+
+    xlab("Month 1 thru 33")
+    
+```
+
+Time Series Analysis - Composition Breakdown
+
+Seasonal Decomposition - Additive and Multiplicative Decomp
+
+```{r}
+#---try decompose() and forecast()
+decomp_sales_df <- sales_df %>%
+  group_by(date_block_num) %>%
+  summarise(
+    totals_sales = sum(item_cnt_day)
+  ) 
+  
+  decompose_sales<-decompose(ts(decomp_sales_df$totals_sales,freq=12), "additive")
+  
+  #plot(as.ts(decompose_sales$seasonal))
+  #plot(as.ts(decompose_sales$trend))
+  #plot(as.ts(decompose_sales$random))
+  plot(decompose_sales)
+  
+  
+
+```
+
+
+AR, MA and ARMA models:
+<TL: DR version of the models>
+
+
+Now, How do we find out, if our time-series in AR process or MA process?
+
+<INSERT STEPS OF AUTOCORRELATION AND PARTIAL AUTOCORRELATION PLOTS>
+
+<DICKER FULLER TEST FOR MODEL VALIDATION> - adf.test()
+
+<CONCLUDE IF AR OR MA MODUL FITS BEST>
+
+ARIMA PREDICTIONS 
+
+```{r}
+#Univariate variable data
+obs_data<-ts(decomp_sales_df$totals_sales,freq=12)
+
+#Explore ARIMA model - parameters = 0,1,0
+future<-forecast(auto.arima(obs_data))
+
+#visualize
+plot(future, ylab = 'Sales by Volume' ,xlab = 'Years', main="Sales forecasting for up to two years")
+
+
+```
+
+
+
+
+
+END
+
+File descriptions and Definitions
+
+sales_train.csv - the training set. Daily historical data from January 2013 to October 2015.
+
+test.csv - the test set. You need to forecast the sales for these shops and products for November 2015.
+
+sample_submission.csv - a sample submission file in the correct format.
+
+items.csv - supplemental information about the items/products.
+
+item_categories.csv  - supplemental information about the items categories.
+
+shops.csv- supplemental information about the shops.
+
+Data fields
+
+ID - an Id that represents a (Shop, Item) tuple within the test set
+
+shop_id - unique identifier of a shop
+
+item_id - unique identifier of a product
+
+item_category_id - unique identifier of item category
+
+item_cnt_day - number of products sold. You are predicting a monthly amount of this measure
+
+item_price - current price of an item
+
+date - date in format dd/mm/yyyy
+
+date_block_num - a consecutive month number, used for convenience. January 2013 is 0, February 2013 is 1,..., October 2015 is 33
+
+item_name - name of item
+
+shop_name - name of shop
+
+item_category_name - name of item category
+
+Real END
